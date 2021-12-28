@@ -90,7 +90,14 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
   val rs2hazard = wb_en && rs2_addr.orR && (rs2_addr === wb_rd_addr)
   val rs1 = Mux(wb_sel === WB_ALU && rs1hazard, ew_alu, regFile.io.rdata1) 
   val rs2 = Mux(wb_sel === WB_ALU && rs2hazard, ew_alu, regFile.io.rdata2)
- 
+
+  val mdu = Module(new MDU)
+
+  // MDU operations
+  mdu.io.rs1    := rs1
+  mdu.io.rs2    := rs2
+  mdu.io.mdu_op := io.ctrl.mdu_op
+
   // ALU operations
   alu.io.A := Mux(io.ctrl.A_sel === A_RS1, rs1, fe_pc)
   alu.io.B := Mux(io.ctrl.B_sel === B_RS2, rs2, immGen.io.out)
@@ -124,7 +131,8 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
   }.elsewhen(!stall && !csr.io.expt) {
     ew_pc     := fe_pc
     ew_inst   := fe_inst
-    ew_alu    := alu.io.out
+    // ew_alu    := alu.io.out
+    ew_alu    := Mux(io.ctrl.mdu_op === MDU.MDU_XXX, alu.io.out, mdu.io.out)
     csr_in    := Mux(io.ctrl.imm_sel === IMM_Z, immGen.io.out, rs1)
     st_type   := io.ctrl.st_type
     ld_type   := io.ctrl.ld_type
