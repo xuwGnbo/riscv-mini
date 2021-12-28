@@ -17,4 +17,4 @@ CheckWriteReady:
     lb x5,0(x3)
     beq x5,x0,CheckWriteReady       #if rady == 1 write data else loop
     sb x6,0(x4)
-    j ECHO_Loop
+    j ECHO_LOOP
