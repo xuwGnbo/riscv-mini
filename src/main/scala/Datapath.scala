@@ -72,6 +72,7 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
   val EXE_wb_sel    = Reg(UInt(2.W))
   val EXE_wb_en     = Reg(Bool())
 
+  val EXE_imm_sel   = Reg(UInt(3.W))      // csr_in
   val EXE_csr_in    = Reg(UInt(xlen.W))
   val EXE_st_type   = Reg(io.ctrl.st_type.cloneType)
   val EXE_ld_type   = Reg(io.ctrl.ld_type.cloneType)
@@ -214,7 +215,8 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
     EXE_wb_sel    := io.ctrl.wb_sel   //---- 写寄存器来源（不是从内存读出来的）
     EXE_wb_en     := io.ctrl.wb_en    //---- 写寄存器
 
-    EXE_csr_in    := Mux(io.ctrl.imm_sel === IMM_Z, immGen.io.out, rs1)
+    EXE_imm_sel   := io.ctrl.imm_sel
+    // EXE_csr_in    := Mux(io.ctrl.imm_sel === IMM_Z, immGen.io.out, rs1)
     EXE_st_type   := io.ctrl.st_type
     EXE_ld_type   := io.ctrl.ld_type
     EXE_csr_cmd   := io.ctrl.csr_cmd
@@ -272,7 +274,8 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
     MEM_wb_sel    := EXE_wb_sel
     MEM_wb_en     := EXE_wb_en
 
-    MEM_csr_in    := EXE_csr_in
+    MEM_csr_in    := Mux(EXE_imm_sel === IMM_Z, EXE_immout, _rs1)
+    // MEM_csr_in    := EXE_csr_in
     MEM_st_type   := EXE_st_type
     MEM_ld_type   := EXE_ld_type
     MEM_csr_cmd   := EXE_csr_cmd
