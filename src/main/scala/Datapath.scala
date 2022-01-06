@@ -64,6 +64,8 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
   val EXE_pc_sel    = Reg(io.ctrl.pc_sel.cloneType)
   val EXE_br_type   = Reg(UInt(3.W))
 
+  val EXE_mdu_op    = Reg(UInt(4.W))
+
   val EXE_alu_op    = Reg(UInt(4.W))
   val EXE_a_sel     = Reg(UInt(1.W))
   val EXE_b_sel     = Reg(UInt(1.W))
@@ -354,12 +356,12 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
   if (p(Trace)) {
     when(regFile.io.wen || EXE_pc_sel === PC_ALU) {
       printf(
-          " npc:%x\n"
-        + "  PC:%x  INST:%x   i_stall:%x\n"
-        + "  ID:%x  INST:%x   ld_type:%x  pc_sel:%x  inst_kill:%x\n"
-        + " EXE:%x  INST:%x   ld_type:%x\n"
-        + " MEM:%x  INST:%x\n"
-        + "  WB:%x  INST:%x   REG[%d] <- %x\n"
+          "npc:%x\n"
+        + " PC:%x  INST:%x   i_stall:%x\n"
+        + " ID:%x  INST:%x   ld_type:%x  pc_sel:%x  inst_kill:%x\n"
+        + "EXE:%x  INST:%x   ld_type:%x\n"
+        + "MEM:%x  INST:%x\n"
+        + " WB:%x  INST:%x   REG[%d] <- %x\n"
         + "io.A:%x  io.B:%x  io.Out:%x  alu.sum:%x\n"
         + "br.A:%x  br.B:%x  br.token:%x  mdu.out:%x\n"
         + "Bypass: mem2exe.rs1:%x  mem2exe.rs2:%x\n"
