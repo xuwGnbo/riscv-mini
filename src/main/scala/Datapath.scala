@@ -204,6 +204,8 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
     EXE_pc_sel    := io.ctrl.pc_sel
     EXE_br_type   := io.ctrl.br_type
 
+    EXE_mdu_op    := io.ctrl.mdu_op   //- MDU Op
+
     EXE_alu_op    := io.ctrl.alu_op   //- ALU Op
     EXE_a_sel     := io.ctrl.A_sel    //- ALU Src
     EXE_b_sel     := io.ctrl.B_sel    //- ALU Src
@@ -237,6 +239,12 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
   alu.io.B := Mux(EXE_b_sel === B_RS2, _rs2, EXE_immout)
   alu.io.alu_op := EXE_alu_op
 
+  // MDU operations
+  val mdu = Module(new MDU)
+  mdu.io.rs1 := _rs1  // no pc or  immout
+  mdu.io.rs2 := _rs2
+  mdu.io.mdu_op := EXE_mdu_op
+
   // Branch condition calc
   brCond.io.rs1 := _rs1
   brCond.io.rs2 := _rs2
@@ -254,7 +262,8 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
     MEM_pc        := EXE_pc
     MEM_inst      := EXE_inst
 
-    MEM_alu       := alu.io.out
+    MEM_alu       := Mux(EXE_mdu_op === MDU.MDU_XXX, alu.io.out, mdu.io.out)
+    // MEM_alu       := alu.io.out
     MEM_sum       := alu.io.sum
     MEM_rs2       := _rs2             //- data for store
 
@@ -352,7 +361,7 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
         + " MEM:%x  INST:%x\n"
         + "  WB:%x  INST:%x   REG[%d] <- %x\n"
         + "io.A:%x  io.B:%x  io.Out:%x  alu.sum:%x\n"
-        + "br.A:%x  br.B:%x  br.token:%x\n"
+        + "br.A:%x  br.B:%x  br.token:%x  mdu.out:%x\n"
         + "Bypass: mem2exe.rs1:%x  mem2exe.rs2:%x\n"
         + "         wb2exe.rs1:%x   wb2exe.rs2:%x\n"
         + "----\n",
@@ -363,7 +372,7 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
         MEM_pc, MEM_inst,
         WB_pc, WB_inst, Mux(regFile.io.wen, WB_rd_addr, 0.U), Mux(regFile.io.wen, regFile.io.wdata, 0.U),
         alu.io.A, alu.io.B, alu.io.out, alu.io.sum, //EXE_pc_sel === PC_ALU
-        brCond.io.rs1, brCond.io.rs2, brCond.io.taken,
+        brCond.io.rs1, brCond.io.rs2, brCond.io.taken, mdu.io.out,
         mem2exe_rs1_bypass, mem2exe_rs2_bypass,
         wb2exe_rs1_bypass, wb2exe_rs2_bypass);
     }
