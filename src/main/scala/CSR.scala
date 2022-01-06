@@ -230,7 +230,7 @@ class CSR(implicit val p: Parameters) extends Module with CoreParams {
   when(time.andR) { timeh := timeh + 1.U }
   cycle := cycle + 1.U
   when(cycle.andR) { cycleh := cycleh + 1.U }
-  val isInstRet = io.inst =/= BitPat.bitPatToUInt(Instructions.NOP) && (!io.expt || isEcall || isEbreak) && !io.stall
+  val isInstRet = io.inst =/= Instructions.NOP && (!io.expt || isEcall || isEbreak) && !io.stall
   when(isInstRet) { instret := instret + 1.U }
   when(isInstRet && instret.andR) { instreth := instreth + 1.U }
 
