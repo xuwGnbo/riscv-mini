@@ -118,11 +118,9 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
   val stall = !io.icache.resp.valid || !io.dcache.resp.valid
   val pc   = RegInit(Const.PC_START.U(xlen.W) - 4.U(xlen.W))
 
-  val i_stall = !(io.ctrl.ld_type === 0.U && EXE_ld_type === 0.U)
-    || (EXE_pc_sel =/= PC_0 && EXE_pc_sel =/= PC_4)
-    || io.ctrl.inst_kill
-    || brCond.io.taken
-    || csr.io.expt
+  val i_stall = !(io.ctrl.ld_type === 0.U && EXE_ld_type === 0.U) ||
+    (EXE_pc_sel =/= PC_0 && EXE_pc_sel =/= PC_4) ||
+    io.ctrl.inst_kill || brCond.io.taken || csr.io.expt
 
   val npc  = Mux(stall, pc, Mux(csr.io.expt, csr.io.evec,
              Mux(EXE_pc_sel === PC_EPC,  csr.io.epc,
@@ -345,32 +343,29 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
   io.dcache.abort := csr.io.expt
 
   if (p(Trace)) {
-    when(regFile.io.wen) {
+    when(regFile.io.wen || EXE_pc_sel === PC_ALU) {
       printf(
-          " npc: %x\n"
-        + "  PC: %x  INST: %x   i_stall: %x\n"
-        + "  ID: %x  INST: %x    pc_sel: %x  ld_type: %x  inst_kill:%x\n"
-        + " EXE: %x  INST: %x                ld_type: %x\n"
-        + "                     io.A: %x  io.B: %x  io.Out: %x\n"
-        + " MEM: %x  INST: %x\n"
-        + "  WB: %x  INST: %x   REG[%d] <- %x\n"
-        + "br.A: %x  br.B: %x   br.token:  %x\n"
-        + "Bypass: mem2exe.rs1: %x  mem2exe.rs2: %x\n"
-        + "         wb2exe.rs1: %x   wb2exe.rs2: %x\n",
+          " npc:%x\n"
+        + "  PC:%x  INST:%x   i_stall:%x\n"
+        + "  ID:%x  INST:%x   ld_type:%x  pc_sel:%x  inst_kill:%x\n"
+        + " EXE:%x  INST:%x   ld_type:%x\n"
+        + " MEM:%x  INST:%x\n"
+        + "  WB:%x  INST:%x   REG[%d] <- %x\n"
+        + "io.A:%x  io.B:%x  io.Out:%x  alu.sum:%x\n"
+        + "br.A:%x  br.B:%x  br.token:%x\n"
+        + "Bypass: mem2exe.rs1:%x  mem2exe.rs2:%x\n"
+        + "         wb2exe.rs1:%x   wb2exe.rs2:%x\n"
         + "----\n",
         npc,
         pc, inst, i_stall,
-        ID_pc, ID_inst, io.ctrl.pc_sel, io.ctrl.ld_type, io.ctrl.inst_kill,
-        EXE_pc, EXE_inst, EXE_ld_type, alu.io.A, alu.io.B, alu.io.out,
+        ID_pc, ID_inst, io.ctrl.ld_type, io.ctrl.pc_sel, io.ctrl.inst_kill,
+        EXE_pc, EXE_inst, EXE_ld_type,
         MEM_pc, MEM_inst,
         WB_pc, WB_inst, Mux(regFile.io.wen, WB_rd_addr, 0.U), Mux(regFile.io.wen, regFile.io.wdata, 0.U),
+        alu.io.A, alu.io.B, alu.io.out, alu.io.sum, //EXE_pc_sel === PC_ALU
         brCond.io.rs1, brCond.io.rs2, brCond.io.taken,
         mem2exe_rs1_bypass, mem2exe_rs2_bypass,
         wb2exe_rs1_bypass, wb2exe_rs2_bypass);
-    }
-    when(EXE_pc_sel === PC_ALU) {
-      printf("[a]: %x; [b]: %x; alu.io.sum: %x; [npc]:%x; [ID]:%x; [EXE]: %x\n",
-        alu.io.A, alu.io.B, alu.io.sum, npc, ID_pc, EXE_pc);
     }
   }
 }
