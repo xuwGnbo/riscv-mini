@@ -49,11 +49,11 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
 
   // ===========================================================================
   val ID_pc         = Reg(UInt())                    // fe_pc
-  val ID_inst       = RegInit(Instructions.NOP)      // fe_inst
+  val ID_inst       = RegInit(BitPat.bitPatToUInt(Instructions.NOP))      // fe_inst
 
   // ---------------------------------------------------------------------------
   val EXE_pc        = Reg(UInt())
-  val EXE_inst      = RegInit(Instructions.NOP)
+  val EXE_inst      = RegInit(BitPat.bitPatToUInt(Instructions.NOP))
 
   val EXE_rs1       = Reg(UInt(xlen.W))
   val EXE_rs2       = Reg(UInt(xlen.W))
@@ -61,6 +61,7 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
   val EXE_rs1_addr  = Reg(UInt(5.W))
   val EXE_rs2_addr  = Reg(UInt(5.W))
 
+  val EXE_pc_sel    = Reg(io.ctrl.pc_sel.cloneType)
   val EXE_br_type   = Reg(UInt(3.W))
 
   val EXE_alu_op    = Reg(UInt(4.W))
@@ -78,7 +79,7 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
 
   // ---------------------------------------------------------------------------
   val MEM_pc        = Reg(UInt())
-  val MEM_inst      = RegInit(Instructions.NOP)
+  val MEM_inst      = RegInit(BitPat.bitPatToUInt(Instructions.NOP))
 
   val MEM_alu       = Reg(UInt(xlen.W))
   val MEM_sum       = Reg(UInt(xlen.W))
@@ -96,7 +97,7 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
 
   // ---------------------------------------------------------------------------
   val WB_pc         = Reg(UInt())                    //
-  val WB_inst       = RegInit(Instructions.NOP)      //
+  val WB_inst       = RegInit(BitPat.bitPatToUInt(Instructions.NOP))      //
 
   val WB_alu        = Reg(UInt(xlen.W))
 
@@ -112,17 +113,25 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
   val WB_illegal    = Reg(Bool())
   val WB_pc_check   = Reg(Bool())
 
+  //val i_stall = Reg(Bool())
+
   // =======================================================================  IF
   val started = RegNext(reset.toBool)
   val stall = !io.icache.resp.valid || !io.dcache.resp.valid
   val pc   = RegInit(Const.PC_START.U(xlen.W) - 4.U(xlen.W))
+
+  val i_stall = !(io.ctrl.ld_type === 0.U && EXE_ld_type === 0.U) || (EXE_pc_sel =/= PC_0 && EXE_pc_sel =/= PC_4) || io.ctrl.inst_kill || brCond.io.taken || csr.io.expt   // || (io.ctrl.pc_sel === PC_0)
+
   val npc  = Mux(stall, pc, Mux(csr.io.expt, csr.io.evec,
-             Mux(io.ctrl.pc_sel === PC_EPC,  csr.io.epc,
-             Mux(io.ctrl.pc_sel === PC_ALU || brCond.io.taken, alu.io.sum >> 1.U << 1.U,
-             Mux(io.ctrl.pc_sel === PC_0, pc, pc + 4.U)))))
-  val inst = Mux(started || io.ctrl.inst_kill || brCond.io.taken || csr.io.expt, Instructions.NOP, io.icache.resp.bits.data)
-  pc                      := npc 
-  io.icache.req.bits.addr := npc
+             Mux(EXE_pc_sel === PC_EPC,  csr.io.epc,
+             Mux(EXE_pc_sel === PC_ALU || brCond.io.taken, alu.io.sum >> 1.U << 1.U,
+             Mux(i_stall, pc, pc + 4.U)))))
+            //  Mux(EXE_ld_type === LD_XXX, pc,
+             //Mux(io.ctrl.pc_sel === PC_0, pc, pc + 4.U)))))
+  // EXE_ld_type =/= LD_XXX        // || (EXE_pc_sel =/= PC_0 && EXE_pc_sel =/= PC_4) || io.ctrl.inst_kill || brCond.io.taken || csr.io.expt
+  val inst = Mux(started || i_stall , BitPat.bitPatToUInt(Instructions.NOP), io.icache.resp.bits.data)
+  pc                      := npc //Mux(i_stall, Mux(EXE_pc_sel === PC_ALU || brCond.io.taken, npc, pc), npc) //Mux(i_stall === 0.U, Mux(io.ctrl.ld_type === 0.U, npc, pc), pc)
+  io.icache.req.bits.addr := npc //Mux(i_stall, Mux(EXE_pc_sel === PC_ALU || brCond.io.taken, npc, pc), npc) //Mux(i_stall === 0.U, Mux(io.ctrl.ld_type === 0.U, npc, pc), pc)
   io.icache.req.bits.data := 0.U
   io.icache.req.bits.mask := 0.U
   io.icache.req.valid     := !stall
@@ -130,12 +139,13 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
  
   // ------------------------------ IF/ID pipelining ---------------------------
   when (!stall) {
+    //i_stall := Mux(i_stall === 0.U && io.ctrl.ld_type =/= 0.U, 2.U, Mux(i_stall === 0.U, 0.U, i_stall - 1.U))
     ID_pc   := pc
     ID_inst := inst
   }
 
   // ======================================================================== ID
-  io.ctrl.inst  := _id_inst
+  io.ctrl.inst  := ID_inst
 
   // regFile read
   val rd_addr  = ID_inst(11, 7)
@@ -165,9 +175,30 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
   // val rs1 = Mux(wb_sel === WB_ALU && rs1hazard, ew_alu, regFile.io.rdata1) 
   // val rs2 = Mux(wb_sel === WB_ALU && rs2hazard, ew_alu, regFile.io.rdata2)
   
-  // no bypass, 将在 EXE阶段处理
-  val rs1 = regFile.io.rdata1
-  val rs2 = regFile.io.rdata2
+  // // no bypass, 将在 EXE阶段处理
+  // val rs1 = regFile.io.rdata1
+  // val rs2 = regFile.io.rdata2
+
+  val MEM_rd_addr = MEM_inst(11, 7)  // 流水线中没有存储 rd_addr
+  val WB_rd_addr  = WB_inst(11, 7)
+  // Load
+  val loffset = WB_alu(1) << 4.U | WB_alu(0) << 3.U
+  val lshift  = io.dcache.resp.bits.data >> loffset
+  val load    = MuxLookup(WB_ld_type, io.dcache.resp.bits.data.zext, Seq(
+    LD_LH  -> lshift(15, 0).asSInt, LD_LB  -> lshift(7, 0).asSInt,
+    LD_LHU -> lshift(15, 0).zext,   LD_LBU -> lshift(7, 0).zext) )
+  val regWrite = MuxLookup(WB_wb_sel, WB_alu.zext, Seq(
+    WB_MEM -> load,
+    WB_PC4 -> (WB_pc + 4.U).zext,
+    WB_CSR -> csr.io.out.zext) ).asUInt 
+
+  // yes bypass for up-write down-read, the pipelining registers also need up-write,
+  // so if you want to read the newest data, need to bypass also;
+  // may also refer to clock-speed
+  val rs1hazard = WB_wb_en && rs1_addr.orR && (rs1_addr === WB_rd_addr)
+  val rs2hazard = WB_wb_en && rs2_addr.orR && (rs2_addr === WB_rd_addr)
+  val rs1 = Mux(rs1hazard, regWrite, regFile.io.rdata1)
+  val rs2 = Mux(rs2hazard, regWrite, regFile.io.rdata2)
 
   // ------------------------------ ID/EXE pipelining --------------------------
   when (reset.toBool || !stall && csr.io.expt) {
@@ -187,6 +218,7 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
     EXE_rs1_addr  := rs1_addr         //- bypass
     EXE_rs2_addr  := rs2_addr         //- bypass
 
+    EXE_pc_sel    := io.ctrl.pc_sel
     EXE_br_type   := io.ctrl.br_type
 
     EXE_alu_op    := io.ctrl.alu_op   //- ALU Op
@@ -204,30 +236,58 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
   }
 
   // ======================================================================= EXE
-  val MEM_rd_addr = MEM_inst(11, 7)  // 流水线中没有存储 rd_addr
-  val WB_rd_addr  = WB_inst(11, 7)
+  // val MEM_rd_addr = MEM_inst(11, 7)  // 流水线中没有存储 rd_addr
+  // val WB_rd_addr  = WB_inst(11, 7)
   // .orR 表示不等于0
-  val mem2exe_rs1_bypass = MEM_wb_en && EXE_rs1_addr.orR && (EXE_rs1_addr == MEM_rd_addr)
-  val mem2exe_rs2_bypass = MEM_wb_en && EXE_rs2_addr.orR && (EXE_rs2_addr == MEM_rd_addr)
-  val wb2exe_rs1_bypass  = WB_wb_en  && EXE_rs1_addr.orR && (EXE_rs1_addr == WB_rd_addr)
-  val wb2exe_rs2_bypass  = WB_wb_en  && EXE_rs2_addr.orR && (EXE_rs2_addr == WB_rd_addr)
+  val mem2exe_rs1_bypass = MEM_wb_en && EXE_rs1_addr.orR && (EXE_rs1_addr === MEM_rd_addr)
+  val mem2exe_rs2_bypass = MEM_wb_en && EXE_rs2_addr.orR && (EXE_rs2_addr === MEM_rd_addr)
+  val wb2exe_rs1_bypass  = WB_wb_en  && EXE_rs1_addr.orR && (EXE_rs1_addr === WB_rd_addr)
+  val wb2exe_rs2_bypass  = WB_wb_en  && EXE_rs2_addr.orR && (EXE_rs2_addr === WB_rd_addr)
+
 
   // MEM级(新) 的结果要优先于 WB级(旧)
   // !注意 要有 MEM_wb_sel === WB_ALU, 计系3可能有点遗漏
   val _rs1 = Mux(MEM_wb_sel === WB_ALU && mem2exe_rs1_bypass, MEM_alu,
-             Mux(wb2exe_rs1_bypass, WB_data, EXE_rs1))
+             Mux(wb2exe_rs1_bypass, regWrite, EXE_rs1))
   val _rs2 = Mux(MEM_wb_sel === WB_ALU && mem2exe_rs2_bypass, MEM_alu,
-             Mux(wb2exe_rs2_bypass, WB_data, EXE_rs2))
+             Mux(wb2exe_rs2_bypass, regWrite, EXE_rs2))
 
   // ALU operations
-  alu.io.A := Mux(EXE_a_sel === A_RS1, EXE_rs1, EXE_pc)
-  alu.io.B := Mux(EXE_b_sel === B_RS2, EXE_rs2, EXE_immout)
+  alu.io.A := Mux(EXE_a_sel === A_RS1, _rs1, EXE_pc)
+  alu.io.B := Mux(EXE_b_sel === B_RS2, _rs2, EXE_immout)
   alu.io.alu_op := EXE_alu_op
 
   // Branch condition calc
   brCond.io.rs1 := _rs1
   brCond.io.rs2 := _rs2
   brCond.io.br_type := EXE_br_type
+
+  if (p(Trace)) {
+    //when(regFile.io.wen) {
+      printf("[io.ctrl.pc_sel]:%x\n[IF ]:%x; [INST]:%x\n[PC ]:%x;\n[ID ]:%x; [INST]:%x\n[EXE]:%x; [INST]:%x\n[MEM]:%x; [INST]:%x\n[WB ]:%x; [INST]:%x\n[io.A]:%x; [io.B]:%x; [io.Out]:%x\n[br.A]:%x; [br.B]:%x; [br.token]:%x\nPC: %x, INST: %x, REG[%d] <- %x\n[ctrl.pc_sel]:%x; [ctrl.ld_type]:%x; [exe_ld_type]:%x; [ctrl.inst_kill]:%x; [i_stall]:%x\n----\n"
+        + "[mem2exe_rs1_bypass]:%x; [mem2exe_rs2_bypass]:%x\n"
+        + "[wb2exe_rs1_bypass ]:%x; [wb2exe_rs2_bypass ]:%x\n",
+        io.ctrl.pc_sel,
+        npc, inst,
+        pc,
+        ID_pc, ID_inst,
+        EXE_pc, EXE_inst,
+        MEM_pc, MEM_inst,
+        WB_pc, WB_inst,
+        alu.io.A, alu.io.B, alu.io.out,
+        brCond.io.rs1, brCond.io.rs2, brCond.io.taken,
+        WB_pc, WB_inst,
+        Mux(regFile.io.wen, WB_rd_addr, 0.U),
+        Mux(regFile.io.wen, regFile.io.wdata, 0.U),
+        io.ctrl.pc_sel, io.ctrl.ld_type, EXE_ld_type,  io.ctrl.inst_kill, i_stall,
+        mem2exe_rs1_bypass, mem2exe_rs2_bypass,
+        wb2exe_rs1_bypass, wb2exe_rs2_bypass);
+    //}
+    when(EXE_pc_sel === PC_ALU) {
+      printf("[a]: %x; [b]: %x; alu.io.sum: %x; [npc]:%x; [ID]:%x; [EXE]: %x\n",
+        alu.io.A, alu.io.B, alu.io.sum, npc, ID_pc, EXE_pc);
+    }
+  }
 
   // ------------------------------ EXE/MEM pipelining -------------------------
   when (reset.toBool || !stall && csr.io.expt) {
@@ -319,12 +379,12 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
   }
 
   // ======================================================================== WB
-  // Load
-  val loffset = WB_alu(1) << 4.U | WB_alu(0) << 3.U
-  val lshift  = io.dcache.resp.bits.data >> loffset
-  val load    = MuxLookup(WB_ld_type, io.dcache.resp.bits.data.zext, Seq(
-    LD_LH  -> lshift(15, 0).asSInt, LD_LB  -> lshift(7, 0).asSInt,
-    LD_LHU -> lshift(15, 0).zext,   LD_LBU -> lshift(7, 0).zext) )
+  // // Load
+  // val loffset = WB_alu(1) << 4.U | WB_alu(0) << 3.U
+  // val lshift  = io.dcache.resp.bits.data >> loffset
+  // val load    = MuxLookup(WB_ld_type, io.dcache.resp.bits.data.zext, Seq(
+  //   LD_LH  -> lshift(15, 0).asSInt, LD_LB  -> lshift(7, 0).asSInt,
+  //   LD_LHU -> lshift(15, 0).zext,   LD_LBU -> lshift(7, 0).zext) )
     
   // CSR access
   csr.io.stall    := stall
@@ -340,24 +400,24 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
   io.host <> csr.io.host 
 
   // Regfile Write
-  val regWrite = MuxLookup(WB_wb_sel, WB_alu.zext, Seq(
-    WB_MEM -> load,
-    WB_PC4 -> (WB_pc + 4.U).zext,
-    WB_CSR -> csr.io.out.zext) ).asUInt 
+  // val regWrite = MuxLookup(WB_wb_sel, WB_alu.zext, Seq(
+  //   WB_MEM -> load,
+  //   WB_PC4 -> (WB_pc + 4.U).zext,
+  //   WB_CSR -> csr.io.out.zext) ).asUInt 
 
   regFile.io.wen   := WB_wb_en && !stall && !csr.io.expt 
   regFile.io.waddr := WB_rd_addr //! 就离谱                                          // !
   regFile.io.wdata := regWrite
-  WB_data          := regWrite // 流水线旁路 !!?
+  // WB_data          := regWrite // 流水线旁路 !!?
 
   // Abort store when there's an excpetion
   io.dcache.abort := csr.io.expt
 
-  if (p(Trace)) {
-    when(regFile.io.wen) {
+  /*if (p(Trace)) {
+    //when(!stall) {
       printf("PC: %x, INST: %x, REG[%d] <- %x\n", WB_pc, WB_inst,
-        Mux(regFile.io.wen, wb_rd_addr, 0.U),                             // !
+        Mux(regFile.io.wen, WB_rd_addr, 0.U),                             // !
         Mux(regFile.io.wen, regFile.io.wdata, 0.U))
-    }
-  }
+    //}
+  }*/
 }
