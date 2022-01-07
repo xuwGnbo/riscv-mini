@@ -332,15 +332,15 @@ class Datapath(implicit val p: Parameters) extends Module with CoreParams {
     
   // CSR access
   csr.io.stall    := stall
-  csr.io.in       := WB_csr_in   // csr_in
-  csr.io.cmd      := WB_csr_cmd  // csr_cmd
-  csr.io.inst     := WB_inst     // ew_inst
-  csr.io.pc       := WB_pc       // ew_pc
-  csr.io.addr     := WB_alu      // ew_alu
-  csr.io.illegal  := WB_illegal  // illegal
-  csr.io.pc_check := WB_pc_check // pc_check
-  csr.io.ld_type  := WB_ld_type  // ld_type
-  csr.io.st_type  := WB_st_type  // st_type
+  csr.io.in       := MEM_csr_in   // csr_in
+  csr.io.cmd      := MEM_csr_cmd  // csr_cmd
+  csr.io.inst     := MEM_inst     // ew_inst
+  csr.io.pc       := MEM_pc       // ew_pc
+  csr.io.addr     := MEM_alu      // ew_alu
+  csr.io.illegal  := MEM_illegal  // illegal
+  csr.io.pc_check := MEM_pc_check // pc_check
+  csr.io.ld_type  := MEM_ld_type  // ld_type
+  csr.io.st_type  := MEM_st_type  // st_type
   io.host <> csr.io.host 
 
   // Regfile Write
